@@ -91,7 +91,10 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js"></script>
+<script>
+  const SUPABASE_URL = "https://zqbjrjegtekbblsqsdwd.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_zlGTPiO_t_DuLbhJ8s-Wbg_PirAXx5S";
+</script>
 <script>
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
