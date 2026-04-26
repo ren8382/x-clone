@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xcopy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #000; color: #e7e9ea; min-height: 100vh; }
+    .container { max-width: 600px; margin: 0 auto; border-left: 1px solid #2f3336; border-right: 1px solid #2f3336; min-height: 100vh; }
+    header { position: sticky; top: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); padding: 16px; border-bottom: 1px solid #2f3336; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+    header h1 { font-size: 20px; font-weight: 700; }
+    .auth-btn { background: #1d9bf0; color: #fff; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 14px; }
+    .auth-btn:hover { background: #1a8cd8; }
+    .auth-btn.secondary { background: transparent; border: 1px solid #536471; color: #e7e9ea; }
+    .auth-btn.secondary:hover { background: rgba(255,255,255,0.05); }
+
+    /* Auth modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: #000; border: 1px solid #2f3336; border-radius: 16px; padding: 32px; width: 360px; max-width: 90vw; }
+    .modal h2 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+    .modal input { width: 100%; background: #000; border: 1px solid #536471; color: #e7e9ea; padding: 12px; border-radius: 4px; font-size: 16px; margin-bottom: 16px; outline: none; }
+    .modal input:focus { border-color: #1d9bf0; }
+    .modal .submit-btn { width: 100%; background: #e7e9ea; color: #000; border: none; padding: 12px; border-radius: 20px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .modal .submit-btn:hover { background: #d0d2d4; }
+    .modal .toggle { text-align: center; margin-top: 16px; color: #536471; font-size: 14px; }
+    .modal .toggle a { color: #1d9bf0; cursor: pointer; }
+    .modal .close { float: right; cursor: pointer; color: #536471; font-size: 20px; margin-top: -16px; margin-right: -16px; }
+    .error-msg { color: #f4212e; font-size: 14px; margin-bottom: 12px; }
+
+    /* Compose */
+    .compose { padding: 12px 16px; border-bottom: 1px solid #2f3336; display: none; }
+    .compose.visible { display: block; }
+    .compose textarea { width: 100%; background: transparent; border: none; color: #e7e9ea; font-size: 20px; resize: none; outline: none; min-height: 80px; font-family: inherit; }
+    .compose-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid #2f3336; padding-top: 12px; }
+    .char-count { color: #536471; font-size: 14px; }
+    .char-count.warn { color: #ffd400; }
+    .char-count.over { color: #f4212e; }
+    .post-btn { background: #1d9bf0; color: #fff; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 14px; }
+    .post-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* Feed */
+    .feed { }
+    .post-item { padding: 12px 16px; border-bottom: 1px solid #2f3336; cursor: pointer; }
+    .post-item:hover { background: rgba(255,255,255,0.03); }
+    .post-meta { font-size: 13px; color: #536471; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .post-meta .email { color: #e7e9ea; font-weight: 700; }
+    .post-content { font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .delete-btn { background: none; border: none; color: #536471; cursor: pointer; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+    .delete-btn:hover { color: #f4212e; background: rgba(244,33,46,0.1); }
+    .loading { text-align: center; padding: 32px; color: #536471; }
+    .empty { text-align: center; padding: 48px 16px; color: #536471; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Xcopy</h1>
+    <div id="header-actions">
+      <button class="auth-btn" id="login-btn">ログイン</button>
+    </div>
+  </header>
+
+  <div class="compose" id="compose">
+    <textarea id="tweet-input" placeholder="いまどうしてる？" maxlength="300"></textarea>
+    <div class="compose-footer">
+      <span class="char-count" id="char-count">280</span>
+      <button class="post-btn" id="post-btn" disabled>ポスト</button>
+    </div>
+  </div>
+
+  <div class="feed" id="feed">
+    <div class="loading">読み込み中...</div>
+  </div>
+</div>
+
+<!-- Auth Modal -->
+<div class="modal-overlay" id="auth-modal">
+  <div class="modal">
+    <span class="close" id="modal-close">✕</span>
+    <h2 id="modal-title">ログイン</h2>
+    <div class="error-msg" id="auth-error"></div>
+    <input type="email" id="auth-email" placeholder="メールアドレス" />
+    <input type="password" id="auth-password" placeholder="パスワード" />
+    <button class="submit-btn" id="auth-submit">ログイン</button>
+    <div class="toggle">
+      アカウントがない？ <a id="auth-toggle">新規登録</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let currentUser = null;
+  let isSignUp = false;
+
+  // --- DOM refs ---
+  const feed = document.getElementById('feed');
+  const compose = document.getElementById('compose');
+  const tweetInput = document.getElementById('tweet-input');
+  const postBtn = document.getElementById('post-btn');
+  const charCount = document.getElementById('char-count');
+  const headerActions = document.getElementById('header-actions');
+  const authModal = document.getElementById('auth-modal');
+  const authError = document.getElementById('auth-error');
+  const authEmail = document.getElementById('auth-email');
+  const authPassword = document.getElementById('auth-password');
+  const authSubmit = document.getElementById('auth-submit');
+  const authToggle = document.getElementById('auth-toggle');
+  const modalTitle = document.getElementById('modal-title');
+  const loginBtn = document.getElementById('login-btn');
+  const modalClose = document.getElementById('modal-close');
+
+  // --- Auth ---
+  document.getElementById('login-btn')?.addEventListener('click', () => openModal(false));
+  modalClose.addEventListener('click', closeModal);
+  authModal.addEventListener('click', e => { if (e.target === authModal) closeModal(); });
+
+  authToggle.addEventListener('click', () => {
+    isSignUp = !isSignUp;
+    modalTitle.textContent = isSignUp ? '新規登録' : 'ログイン';
+    authSubmit.textContent = isSignUp ? '登録' : 'ログイン';
+    authToggle.textContent = isSignUp ? 'ログイン' : '新規登録';
+    authToggle.previousSibling.textContent = isSignUp ? 'すでにアカウントがある？ ' : 'アカウントがない？ ';
+    authError.textContent = '';
+  });
+
+  authSubmit.addEventListener('click', async () => {
+    authError.textContent = '';
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    if (!email || !password) { authError.textContent = 'メールとパスワードを入力してください'; return; }
+
+    authSubmit.disabled = true;
+    try {
+      let result;
+      if (isSignUp) {
+        result = await db.auth.signUp({ email, password });
+        if (result.error) throw result.error;
+        if (result.data.user && !result.data.session) {
+          authError.style.color = '#00ba7c';
+          authError.textContent = '確認メールを送信しました。メールを確認してください。';
+          return;
+        }
+      } else {
+        result = await db.auth.signInWithPassword({ email, password });
+        if (result.error) throw result.error;
+      }
+      closeModal();
+    } catch (e) {
+      authError.style.color = '#f4212e';
+      authError.textContent = e.message;
+    } finally {
+      authSubmit.disabled = false;
+    }
+  });
+
+  function openModal(signUp) {
+    isSignUp = signUp;
+    modalTitle.textContent = signUp ? '新規登録' : 'ログイン';
+    authSubmit.textContent = signUp ? '登録' : 'ログイン';
+    authError.textContent = '';
+    authEmail.value = '';
+    authPassword.value = '';
+    authModal.classList.add('active');
+    authEmail.focus();
+  }
+
+  function closeModal() {
+    authModal.classList.remove('active');
+  }
+
+  // --- Session ---
+  db.auth.onAuthStateChange((event, session) => {
+    currentUser = session?.user ?? null;
+    updateUI();
+    loadPosts();
+  });
+
+  function updateUI() {
+    if (currentUser) {
+      const email = currentUser.email;
+      headerActions.innerHTML = `<span style="color:#536471;font-size:13px;margin-right:8px">${email}</span><button class="auth-btn secondary" id="logout-btn">ログアウト</button>`;
+      document.getElementById('logout-btn').addEventListener('click', () => db.auth.signOut());
+      compose.classList.add('visible');
+    } else {
+      headerActions.innerHTML = `<button class="auth-btn" id="login-btn">ログイン</button>`;
+      document.getElementById('login-btn').addEventListener('click', () => openModal(false));
+      compose.classList.remove('visible');
+    }
+  }
+
+  // --- Compose ---
+  tweetInput.addEventListener('input', () => {
+    const len = tweetInput.value.length;
+    const remaining = 280 - len;
+    charCount.textContent = remaining;
+    charCount.className = 'char-count' + (remaining < 20 ? ' warn' : '') + (remaining < 0 ? ' over' : '');
+    postBtn.disabled = len === 0 || remaining < 0;
+  });
+
+  postBtn.addEventListener('click', async () => {
+    const content = tweetInput.value.trim();
+    if (!content || !currentUser) return;
+    postBtn.disabled = true;
+    const { error } = await db.from('posts').insert({ content, user_id: currentUser.id });
+    if (!error) {
+      tweetInput.value = '';
+      charCount.textContent = '280';
+      charCount.className = 'char-count';
+      loadPosts();
+    }
+    postBtn.disabled = false;
+  });
+
+  // --- Feed ---
+  async function loadPosts() {
+    feed.innerHTML = '<div class="loading">読み込み中...</div>';
+    const { data, error } = await db
+      .from('posts')
+      .select('id, content, created_at, user_id, profiles:user_id(email)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error || !data) {
+      feed.innerHTML = '<div class="empty">投稿を読み込めませんでした</div>';
+      return;
+    }
+
+    // fallback: fetch emails via separate query if join fails
+    renderPosts(data);
+  }
+
+  function renderPosts(posts) {
+    if (posts.length === 0) {
+      feed.innerHTML = '<div class="empty">まだ投稿がありません</div>';
+      return;
+    }
+    feed.innerHTML = posts.map(p => {
+      const email = p.profiles?.email ?? p.user_id.slice(0, 8) + '…';
+      const date = new Date(p.created_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const isOwn = currentUser && p.user_id === currentUser.id;
+      return `
+        <div class="post-item">
+          <div class="post-meta">
+            <span class="email">${escHtml(email)}</span>
+            <span>${date}${isOwn ? ` <button class="delete-btn" data-id="${p.id}">削除</button>` : ''}</span>
+          </div>
+          <div class="post-content">${escHtml(p.content)}</div>
+        </div>`;
+    }).join('');
+
+    feed.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        await db.from('posts').delete().eq('id', id);
+        loadPosts();
+      });
+    });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Initial load
+  loadPosts();
+</script>
+</body>
+</html>
